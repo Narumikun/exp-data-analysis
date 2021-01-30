@@ -1,0 +1,70 @@
+jupyter
+pandas
+pip-chill
+scipy
+# !!! install scienceplots after all other packages installed
+# scienceplots
+
+# appnope # Installed as dependency for ipykernel, ipython
+# argon2-cffi # Installed as dependency for notebook
+# async-generator # Installed as dependency for nbclient
+# attrs # Installed as dependency for jsonschema
+# backcall # Installed as dependency for ipython
+# bleach # Installed as dependency for nbconvert
+# cffi # Installed as dependency for argon2-cffi
+# cycler # Installed as dependency for matplotlib
+# decorator # Installed as dependency for ipython
+# defusedxml # Installed as dependency for nbconvert
+# entrypoints # Installed as dependency for nbconvert
+# ipykernel # Installed as dependency for jupyter-console, qtconsole, ipywidgets, notebook, jupyter
+# ipython # Installed as dependency for ipykernel, jupyter-console, ipywidgets
+# ipython-genutils # Installed as dependency for notebook, qtconsole, nbformat, traitlets
+# ipywidgets # Installed as dependency for jupyter
+# jedi # Installed as dependency for ipython
+# jinja2 # Installed as dependency for notebook, nbconvert
+# jsonschema # Installed as dependency for nbformat
+# jupyter-client # Installed as dependency for jupyter-console, nbclient, ipykernel, qtconsole, notebook
+# jupyter-console # Installed as dependency for jupyter
+# jupyter-core # Installed as dependency for nbformat, qtconsole, notebook, jupyter-client, nbconvert
+# jupyterlab-pygments # Installed as dependency for nbconvert
+# kiwisolver # Installed as dependency for matplotlib
+# markupsafe # Installed as dependency for jinja2
+# matplotlib # Installed as dependency for scienceplots
+# mistune # Installed as dependency for nbconvert
+# nbclient # Installed as dependency for nbconvert
+# nbconvert # Installed as dependency for notebook, jupyter
+# nbformat # Installed as dependency for notebook, nbclient, ipywidgets, nbconvert
+# nest-asyncio # Installed as dependency for nbclient
+# notebook # Installed as dependency for widgetsnbextension, jupyter
+# numpy # Installed as dependency for scipy, pandas, matplotlib
+# packaging # Installed as dependency for bleach
+# pandocfilters # Installed as dependency for nbconvert
+# parso # Installed as dependency for jedi
+# pexpect # Installed as dependency for ipython
+# pickleshare # Installed as dependency for ipython
+# pillow # Installed as dependency for matplotlib
+# prometheus-client # Installed as dependency for notebook
+# prompt-toolkit # Installed as dependency for jupyter-console, ipython
+# ptyprocess # Installed as dependency for terminado, pexpect
+# pycparser # Installed as dependency for cffi
+# pygments # Installed as dependency for jupyter-console, nbconvert, qtconsole, ipython, jupyterlab-pygments
+# pyparsing # Installed as dependency for matplotlib, packaging
+# pyrsistent # Installed as dependency for jsonschema
+# python-dateutil # Installed as dependency for pandas, jupyter-client, matplotlib
+# pytz # Installed as dependency for pandas
+# pyzmq # Installed as dependency for notebook, jupyter-client, qtconsole
+# qtconsole # Installed as dependency for jupyter
+# qtpy # Installed as dependency for qtconsole
+# send2trash # Installed as dependency for notebook
+# six # Installed as dependency for argon2-cffi, jsonschema, cycler, python-dateutil, bleach
+# terminado # Installed as dependency for notebook
+# testpath # Installed as dependency for nbconvert
+# tornado # Installed as dependency for terminado, ipykernel, jupyter-client, notebook
+# traitlets # Installed as dependency for nbformat, nbclient, jupyter-core, ipykernel, qtconsole, ipython, ipywidgets, notebook, jupyter-client, nbconvert
+# wcwidth # Installed as dependency for prompt-toolkit
+# webencodings # Installed as dependency for bleach
+# widgetsnbextension # Installed as dependency for ipywidgets
+
+ipython
+matplotlib
+numpy
