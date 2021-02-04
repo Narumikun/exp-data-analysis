@@ -1,3 +1,4 @@
+jedi=0.17.2 # 0.18 has problem with autoreload
 jupyter
 pandas
 pip-chill

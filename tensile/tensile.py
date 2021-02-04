@@ -1,5 +1,6 @@
 import logging
 import math
+import pickle
 import re
 
 from matplotlib import ticker
@@ -71,34 +72,51 @@ def statistics_of_columns(df: pd.DataFrame):
 
 # %%
 class TensileTest:
-    def __init__(self, serial_name='Tensile', fp=None, info=None, data=None):
-        """
+    def __init__(self, serial_name='Tensile', fps=None, info=None, data=None, units=None):
+        # type:(str,Union[str,List[str]],pd.DataFrame,List[pd.DataFrame],Dict)->TensileTest
+        """定义一组拉伸测试。
 
-        :param serial_name: 样品系列名称，并不是每一根曲线的名称
-        :param fp: csv文件路径
-        :param info:
-        :param data:
+        Parameters
+        ----------
+        serial_name : str
+            测试名称
+        fps : str, List[str]
+            若提供测试数据csv文件的路径，则读取数据
+        info :
+
+        data :
+
+
+        Returns
+        -------
+
         """
-        # type:(str,str,pd.DataFrame,List[pd.DataFrame])
-        assert fp is None or (info is None and data is None), '不能同时提供文件名和数据'
+        assert fps is None or (info is None and data is None), '不能同时提供文件名和数据'
         self.serial_name = serial_name
         self.info: pd.DataFrame = info if info is not None else pd.DataFrame()
         self.tensile_data: List[pd.DataFrame] = data if data is not None else []
-        self.units: Dict[str, str] = {
-            'length': 'm',
-            'stress': 'Pa',
-        }
-        if fp:
-            self.read_csv(fp)
+        self.units: Dict[str, str] = units or {'length': 'm', 'stress': 'Pa'}
+        if fps:
+            self.read_csv(fps)
 
-    def read_csv(self, fps: Union[str, List[str]], encoding='GBK'):
-        """
-        原始数据：每行宽度不等，大都没有","结尾，每个单元格有双引号围着"cell"
-        Excel另存为: 每行宽度相等，空单元格直接空字串补全，即结尾出现n个逗号,,,,,
+    def read_csv(self, fps: Union[str, List[str]], encoding: str = 'GBK'):
+        """读取拉伸机软件经"导出所有"这一选项导出的csv数据文件
 
-        :param fps: 可以是一个文件名或多个文件名：a.csv, 或 [a-1.csv, a-2.csv]
-        :param encoding: 岛津软件采用中文界面，导出含中文的csv文件，编码默认使用GBK或GB2313，一般文件为UTF8
-        :return:
+        文件从上至下可分割为以下几个groups:
+        0-测试信息, 1-样品信息, 2-计算结果, 3~n-各曲线数据。每个group之间有一空行分割。
+
+        Parameters
+        ----------
+        fps :
+            一个或多个被分割的文件路径, 若经过手动修改，务必保证格式不变，如同一列两组数据之间有一空行等。
+            如 a.csv, [a-1.csv, a-2.csv]
+        encoding : str, default 'GBK'
+            岛津软件采用中文界面，导出含中文的csv文件，编码默认使用GBK或GB2313，流行使用的为UTF8为主，若出现乱码再修改
+
+        Returns
+        -------
+
+
         """
         if isinstance(fps, str):
             fps = [fps]
@@ -124,7 +142,7 @@ class TensileTest:
             assert tuple(rows[2]) == ('名称', '直径', '标距')
             _, diameter_unit, length_unit = rows[3]
             for row in rows[4:]:
-                name, diameter, length = self.parse_types(row, (str, float, float))
+                name, diameter, length = self._parse_types(row, (str, float, float))
                 area = math.pi * to_si_unit(diameter / 2, diameter_unit) ** 2
                 length = to_si_unit(length, length_unit)
                 info.append([name, area, length])
@@ -149,19 +167,96 @@ class TensileTest:
                 sample_name, self.info.loc[sample_index, 'name'])
             assert tuple(rows[1]) == ('时间', '载荷', '行程'), rows[1]
             data_units = rows[2]
-            df = pd.DataFrame(self.parse_types(rows[3:], float), columns=['time', 'load', 'displacement'])
+            df = pd.DataFrame(self._parse_types(rows[3:], float), columns=['time', 'load', 'displacement'])
             logger.debug(f'No.{sample_index}-"{sample_name}": {df.size}')
             for col, unit in zip(df.columns, data_units):
                 df[col] = to_si_unit(df[col], unit)
             self.tensile_data.append(df)
 
-    @staticmethod
-    def parse_types(cells: Union[List[str], List[List[str]]], types: Union[Tuple, Type] = None):
-        """
+    def export(self, samples: Iterable = None, cols=('strain', 'stress'), clipboard: bool = None, fp: str = None,
+               **kwargs):
+        """将指定样品samples的数据列cols合并成一张表格拷贝到剪切板或保存到文件
 
-        :param cells: One row or multiple rows(table)
-        :param types: e.g. float - for all cells, [str, float, float] for every row
-        :return:
+        Parameters
+        ----------
+        samples : sequence
+            list of sample name or index, 默认所有样品
+        cols : sequence, default ('strain', 'stress')
+            列名，默认strain和stress两列 (Default value = ('strain')
+        clipboard : bool
+            True则保存到剪切板以便在Origin等中复制
+        fp : str
+            保存到CSV文件
+        **kwargs :
+            其余可选参数传递给DataFrame.to_clipboard()或to_csv()，
+            若使用额外关键字参数，建议两者不要同时使用clipboard和fp，不能区分kwargs该传递给哪一个
+
+        Returns
+        -------
+
+        """
+        assert not (kwargs and clipboard and fp), '使用额外关键字参数时不能同时保存到剪切板和文件'
+        if samples is None:
+            indices = range(len(self))
+        else:
+            indices = self.name_to_index(samples)
+        # assert
+        df = pd.DataFrame()
+        for index in indices:
+            new_cols = [self.info.loc[index, 'name'] + '_' + col for col in cols]
+            df[new_cols] = self.tensile_data[index][list(cols)]
+        if clipboard:
+            df.to_clipboard(**kwargs)
+        if fp:
+            df.to_csv(fp, encoding='utf8', **kwargs)
+
+    def dump(self, fp: str):
+        """利用pickle保存TensileTest实例
+
+        Parameters
+        ----------
+        fp : str
+            保存的文件名，建议使用后缀 *.pkl
+
+        Returns
+        -------
+
+        """
+        with open(fp, 'wb')as fd:
+            pickle.dump(self, fd)
+
+    @staticmethod
+    def load(fp: str):
+        """从pickle文件中加载对象
+
+        Parameters
+        ----------
+        fp: str
+            文件名, dump()所保存的pkl文件
+
+        Returns
+        -------
+
+        """
+        with open(fp, 'rb')as fd:
+            return pickle.load(fd)
+
+    @staticmethod
+    def _parse_types(cells: Union[List[str], List[List[str]]], types: Union[Sequence, Type] = None):
+        """对一行或多行数据进行类型转换。
+
+        Parameters
+        ----------
+        cells : sequence
+            一行(一位数组)或多行数据(二维数组)
+        types :
+            需要转化的类型，有效类型: str, int, float 或Callable自定义转换函数。
+            - 若为单个类型，则所有单元格转换为该类型
+            - 若为一组类型，如(str,int,float)，则每行分别转化为对应类型，确保长度一致
+
+        Returns
+        -------
+
         """
         if not cells or types is None:
             return cells
@@ -174,17 +269,23 @@ class TensileTest:
         elif isinstance(cells[0], (list, tuple)):
             # table
             # noinspection PyTypeChecker
-            cells = [TensileTest.parse_types(cell, types) for cell in cells]
+            cells = [TensileTest._parse_types(cell, types) for cell in cells]
         # logger.debug(f'split line: {cells}')
         return cells
 
     def rename(self, names: Union[List[str], Callable] = None):
-        """
-        If names is :
-         - None     : set names as str(index), equals callable "str"
-         - Callable : names(index), lambda i: 'sample-'+str(i)
-        :param names:
-        :return:
+        """重命名各条曲线。
+
+        Parameters
+        ----------
+        names : List[str], Callable, default None
+            若为None, 则以序号作为名称，0开始。
+            若为一组str，保证长度一致。
+            若为Callable, 即函数或lambda表达式，如 lambda index: 'sample'+index，输入为序号(int,从0开始)，输出为str
+
+        Returns
+        -------
+
         """
         if names is None:
             names = [str(i) for i in self.info.index]
@@ -196,6 +297,17 @@ class TensileTest:
             raise ValueError(f'存在重复样品名: {names}')
         self.info['name'] = names
 
+    def remove(self, index_or_name: Union[int, str]):
+        if isinstance(index_or_name, str):
+            assert index_or_name in self.info['name'], f'{index_or_name} 不在列表中'
+            index = list(self.info['name']).index(index_or_name)
+        else:
+            assert 0 <= index_or_name < len(self), f'{index_or_name} not in [0, {len(self.tensile_data)})'
+            index = index_or_name
+        self.tensile_data.pop(index)
+        self.info.drop(index, inplace=True)
+        self.info.reset_index(drop=True, inplace=True)
+
     def __str__(self):
         return f'<{self.__class__.__name__} {self.serial_name} ({len(self.tensile_data)} samples)>'
 
@@ -203,21 +315,37 @@ class TensileTest:
         return len(self.tensile_data)
 
     def __add__(self, other):
-        assert isinstance(other, TensileTest)
+        """加法实现
+
+        注意：`serial_name`和`units`均采用前者的数据，执行加法前请确保`units`一致
+        """
+        assert isinstance(other, self.__class__)
         info = pd.concat([self.info, other.info], axis=0).reset_index(drop=True)
-        res = TensileTest(info=info, data=self.tensile_data + other.tensile_data)
+        res = TensileTest(serial_name=self.serial_name, units=self.units, info=info,
+                          data=self.tensile_data + other.tensile_data)
         return res
 
     def __getitem__(self, item):
         """
-        Examples:
+        索引及切片实现
 
-        - a[0], a[0:3], a[0:5:2]
-        - a['name0'], a['name0':'name3'], a['name0':'name5':2]
-        - a[(1,3,'name2',6,'name0')]
+        有效的索引格式:
 
-        :param item:
-        :return: A new sliced TensileTest instance
+        ========  =================  ==================
+        Type      Example            Description
+        ========  =================  ==================
+        int       data[0]            序号索引
+        str       data["s1"]         样品名索引
+        Sequence  data[[1,"s1"]]     以上两种索引的组合
+        slice     data[0:5:2]        切片，start和stop均
+                  data["s1":"s5":2]  可使用序号或样品名
+        ========  =================  ==================
+
+        Returns
+        -------
+        data: TensileTest
+            A new TensileTest instance with sliced data
+
         """
         names = self.info['name']
         if isinstance(item, slice):
@@ -238,10 +366,16 @@ class TensileTest:
         return TensileTest(info=info, data=dfs, serial_name=self.serial_name)
 
     def name_to_index(self, keys: Union[int, str, Iterable[Union[int, str]]] = None) -> Union[int, List[int]]:
-        """
-        若样品名重复，则只取第一个
-        :param keys: key can be index(int) or name(str)
-        :return:
+        """返回一组样品名(str)对应的索引(int), 允许样品名和索引同时存在
+
+        Parameters
+        ----------
+        keys : Sequence
+            样品名(str)或整数索引(int)的列表
+
+        Returns
+        -------
+
         """
         names = self.info['name']
         if isinstance(keys, int):
@@ -251,19 +385,20 @@ class TensileTest:
         else:
             return [names[names == key].index[0] if isinstance(key, str) else key for key in keys]
 
-    def set_stress_unit(self, unit='Pa'):
-        """
-        WARNING: re-calculate after set new unit!!!
+    @property
+    def stress_unit(self):
+        return self.units.get('stress', 'Pa')
 
-        :param unit:
-        :return:
+    @stress_unit.setter
+    def stress_unit(self, value: str):
+        """设置应力/模量单位，有效值: Pa, kPa, MPa.
+
+        修改单位后，必须重新计算所有数据。
         """
-        assert unit in ('Pa', 'kPa', 'MPa'), unit
+        valid = ('Pa', 'kPa', 'MPa')
+        unit = validate_unit(valid, value)
+        assert unit is not None, f'单位无效: {value}, 可选值: {valid}'
         self.units['stress'] = unit
-        # p_unit = self.units.get('stress', 'Pa')
-        # ratio = to_si_unit(1.0, p_unit) / to_si_unit(1.0, unit)
-        # for df in self.tensile_data:
-        #     df['stress'] = df['stress'] * ratio
 
     # not used yet
     def filter_data_by_index(self, remains: list = None, drops: list = None):
@@ -280,8 +415,20 @@ class TensileTest:
 
     # 数据处理
     def smooth(self, method='savgol', **kwargs):
-        """Smooth origin `load` column data, please ensure cal_stress_strain() after smooth
-        DON'T use when there is break change or TODO: set smooth range?
+        """平滑原始数据
+
+        有断裂或有滑移时不能使用 TODO: set smooth range?
+
+        Parameters
+        ----------
+        method : str
+            平滑方法, 可选值: 'savgol', (Default value = 'savgol')
+        **kwargs :
+
+
+        Returns
+        -------
+
         """
         if method == 'savgol':
             from scipy.signal import savgol_filter
@@ -309,13 +456,22 @@ class TensileTest:
             # self.info.loc[i, 'break_stress'] = stress[break_index]
 
     def cal_init_modulus(self, x0=None, xlim=(0.05, 0.1), deg=3, plot=True):
-        """
+        """计算初始模量
 
-        :param x0: 求x处的初始模量，默认 xlim[0]
-        :param xlim: 拟合区间，一般测试起始阶段不稳定，不宜选用类似[0,*]的范围
-        :param deg: 多项式拟合的次数
-        :param plot: 显示拟合的多项式曲线
-        :return:
+        Parameters
+        ----------
+        x0 : float, default `xlim[0]`
+            求x处的初始模量，默认 `xlim[0]`
+        xlim : Tuple[float], default (0.05,0.1)
+            拟合区间，一般测试起始阶段不稳定，不宜选用类似[0,*]的范围
+        deg : int, default 3
+            多项式拟合的次数
+        plot : bool default True
+            显示拟合的多项式曲线
+
+        Returns
+        -------
+
         """
         if x0 is None:
             x0 = xlim[0]
@@ -346,16 +502,36 @@ class TensileTest:
             plt.axvspan(*xlim, facecolor='yellow', alpha=0.5)
             plt.axvline(x0, color='red', linewidth=2, linestyle='--')
 
-    def cal_break_point(self, method='maxproduct', plot=True):
-        """
+    def cal_break_point(self, methods='maxproduct', plot=True):
+        # type:(Union[str,Dict[Union[int,str],str]],bool)->None
+        """寻找断裂点
 
-        :param method: maxproduct(default), max, peak
-        :param plot:
-        :return:
+        计算结果保存在`info`中
+
+        Parameters
+        ----------
+        methods: str, Dict[Any, str], default 'maxproduct'
+            寻找断裂点的方法, 可选值: 'maxproduct'(default), 'max', 'peak', 'skip'(跳过)
+
+            - 若是一个str值，则将该方法应用于所有曲线
+            - 若是一个dict，如```{1:"max","line1":"peak","default":"maxpeak"}```，则分别为每条曲线指定不同的方法，
+              注意为所有曲线指定值或提供默认值(default)
+        plot: bool, default True
+            是否画图
+
+        Returns
+        -------
+
         """
+        if isinstance(methods, str):
+            methods: Dict[Union[int, str], str] = {"default": methods}
+        np.multiply()
         for i, df in enumerate(self.tensile_data):
             stress = df['stress']
             strain = df['strain']
+            method = methods.get(i) or methods.get(self.info.loc[i, 'name']) or methods.get('default')
+            assert method is not None, f'为{i}-{self.info.loc[i, "name"]} 指定method或提供默认值default'
+
             if method == 'maxproduct':
                 break_index = (stress * strain).idxmax()
             elif method == 'peak':
@@ -363,6 +539,8 @@ class TensileTest:
                 break_index = break_peaks[-1] if len(break_peaks) > 0 else (len(stress) - 1)
             elif method == 'max':
                 break_index = stress.idxmax()
+            elif method == 'skip':
+                continue
             elif isinstance(method, float):
                 # TODO:
                 # gradient = np.divide(np.gradient(stress), stress)  # 每一采样时刻相对当前值的变化率
@@ -388,11 +566,30 @@ class TensileTest:
             plt.ylabel(f'σ ({self.units.get("stress", "Pa")})')
             plt.legend()
 
-    def draw(self, true_ss=False, color=None):
+    def draw(self, true_ss=False, colors=None):
+        """Draw multiple stress-strain line in one plot
+
+        Parameters
+        ----------
+        true_ss : bool, default False
+            是否使用真实应力应变，默认使用工程应力应变 (Default value = False)
+        colors :
+            指定曲线颜色，颜色格式具体参考matplotlib.colors，常用的有:
+            - 内建的8中颜色: 'b','g','r','c','m','y','k','w'
+            - 灰度: '0.2', 注意是str而非float
+            - html颜色: '#00ff00'
+            - RGB/RGBA元组: (0.1, 0.9, 0.9)
+            可指定一个或一组颜色:
+            - 若为None(default), 则使用默认的color_cycler轮换颜色
+            - 若只有一种颜色，则所有曲线采用相同颜色，通常在不同组数据(多个TensileTest实例)在同一张图上绘制时使用
+            - 若为一组颜色，则确保和样品数一致
+
+        Returns
+        -------
+
         """
-        Draw multiple stress-strain line in one plot
-        :return:
-        """
+        if isinstance(colors, str) or (isinstance(colors, (list, tuple)) and isinstance(colors[0], float)):
+            colors = [colors] * len(self)
         x_key, y_key = ['true_strain', 'true_stress'] if true_ss else ['strain', 'stress']
         all_indices = list(self.info.index)
         verify_unique(all_indices)
@@ -401,7 +598,7 @@ class TensileTest:
         plt.figure('ss', facecolor='white')
         for i in all_indices:  # type:int
             plt.plot(self.tensile_data[i][x_key], self.tensile_data[i][y_key],
-                     label=self.info.loc[i, 'name'], color=color)
+                     label=self.info.loc[i, 'name'], color=colors[i])
         plt.gca().set_xlim(left=0, right=None)
         plt.gca().set_ylim(bottom=0, top=None)
         plt.title(f'Stress-strain curves of {self.serial_name}')
@@ -413,13 +610,22 @@ class TensileTest:
     @classmethod
     def barplot(cls, group, key, error_bar_type='', plot_type='line'):
         # type: (List[TensileTest],str,str,str)->None
-        """
-        group 中的TensileTest实例必须已完成各类计算
-        :param group:
-        :param key: 'break_strength'
-        :param error_bar_type:
-        :param plot_type:
-        :return:
+        """Error bar plot
+
+        Parameters
+        ----------
+        group: List[TensileTest]
+            多组测试数据
+        key: str
+            需要绘制的物理参数，为`info.columns`中的一个
+        error_bar_type: str
+            error bar计算方法，目前采用标准差std_err
+        plot_type: str
+            可选: 'line'-折线图, 'bar'-柱状图
+
+        Returns
+        -------
+
         """
         plt.figure(f'Barplot-{key}', facecolor='white')
         stats = [statistics_of_columns(item.info) for item in group]

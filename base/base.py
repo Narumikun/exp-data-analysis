@@ -1,6 +1,6 @@
 import csv
 from io import StringIO
-from typing import List, Tuple, Dict, Iterable, Optional, Union, Callable, Type  # noqa
+from typing import List, Tuple, Dict, Sequence, Iterable, Optional, Union, Callable, Type  # noqa
 
 import matplotlib.pyplot as plt
 import numpy as np  # noqa
@@ -26,3 +26,9 @@ def parse_csv_str(text: str, drop_empty_trailing=True):
         rows.append(row)
     # print(rows[0:min(10, len(rows))])
     return list(rows)
+
+
+def validate_unit(valid: Iterable[str], unit: str) -> Optional[str]:
+    for i, v in enumerate(valid):
+        if v.lower() == unit.lower():
+            return v
